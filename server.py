@@ -127,6 +127,19 @@ def validate():
     return jsonify(sign_license(payload))
 
 
+# ---------------- KEY GENERATOR ----------------
+import random
+import string
+
+
+def generate_key():
+    parts = []
+    for _ in range(4):
+        part = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+        parts.append(part)
+    return "-".join(parts)
+
+
 # ---------------- ADMIN PROTECTION ----------------
 def require_admin():
     if not ADMIN_TOKEN:
@@ -140,6 +153,24 @@ def require_admin():
         return False
 
     return True
+
+
+# ---------------- GENERATE KEY ----------------
+@app.route("/generate", methods=["POST"])
+def generate():
+    if not require_admin():
+        return jsonify({"status": "unauthorized"}), 403
+
+    key = generate_key()
+
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+
+    c.execute("INSERT INTO licenses(key, machine) VALUES(?, NULL)", (key,))
+    conn.commit()
+    conn.close()
+
+    return {"status": "generated", "key": key}
 
 
 # ---------------- ADD KEY ----------------
