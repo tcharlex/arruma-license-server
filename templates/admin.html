@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Licenças</title>
+    <style>
+        body {
+            font-family: Arial;
+            background: #111;
+            color: #eee;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #333;
+        }
+
+        tr:hover {
+            background: #222;
+        }
+
+        .free {
+            color: #6f6;
+        }
+
+        .used {
+            color: #6cf;
+        }
+
+        .blocked {
+            color: #f66;
+        }
+
+        button {
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Painel de Licenças</h2>
+
+    <form action="/generate" method="post">
+        <input type="hidden" name="token" value="{{token}}">
+        <button>Gerar nova licença</button>
+    </form>
+
+    <table>
+        <tr>
+            <th>Chave</th>
+            <th>Status</th>
+            <th>Máquina</th>
+            <th>Ação</th>
+        </tr>
+
+        {% for lic in licenses %}
+        <tr>
+            <td>{{lic.key}}</td>
+            <td
+                class="{% if lic.status=='Livre' %}free{% elif lic.status=='Ativada' %}used{% else %}blocked{% endif %}">
+                {{lic.status}}
+            </td>
+            <td>{{lic.machine}}</td>
+            <td>
+                <form action="/revoke" method="post">
+                    <input type="hidden" name="token" value="{{token}}">
+                    <input type="hidden" name="key" value="{{lic.key}}">
+                    <button>Bloquear</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+
+    </table>
+
+</body>
+
+</html>
