@@ -255,6 +255,37 @@ def purchase_webhook():
         return {"status": "error"}
 
 
+# ---------------- ADMIN PANEL ----------------
+from flask import render_template, redirect
+
+
+@app.route("/admin")
+def admin_panel():
+    token = request.args.get("token")
+    if token != ADMIN_TOKEN:
+        return "Unauthorized", 403
+
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+
+    c.execute("SELECT key, machine, revoked FROM licenses ORDER BY rowid DESC")
+    rows = c.fetchall()
+    conn.close()
+
+    licenses = []
+    for key, machine, revoked in rows:
+        if revoked:
+            status = "Bloqueada"
+        elif machine:
+            status = "Ativada"
+        else:
+            status = "Livre"
+
+        licenses.append({"key": key, "machine": machine or "-", "status": status})
+
+    return render_template("admin.html", licenses=licenses, token=ADMIN_TOKEN)
+
+
 # ---------------- MAIN ----------------
 if __name__ == "__main__":
     from waitress import serve
