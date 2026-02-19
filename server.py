@@ -6,9 +6,11 @@ import json
 import base64
 import time
 import secrets
+import string
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
+from datetime import datetime
 
 
 # ---------------- CONFIG ----------------
@@ -210,6 +212,47 @@ def revoke():
     conn.close()
 
     return {"status": "revoked"}
+
+
+# ---------------- PURCHASE WEBHOOK ----------------
+@app.route("/purchase", methods=["POST"])
+def purchase_webhook():
+    data = request.json
+    print("WEBHOOK RECEBIDO:", data)
+
+    try:
+        event = data.get("event")
+
+        # só processa compra aprovada
+        if event not in ["purchase.approved", "compra.aprovada"]:
+            return {"status": "ignored"}
+
+        customer = data.get("customer", {})
+        email = customer.get("email")
+
+        if not email:
+            return {"status": "no_email"}
+
+        key = generate_key()
+
+        conn = sqlite3.connect(DB)
+        c = conn.cursor()
+
+        c.execute(
+            "INSERT INTO licenses(key, machine) VALUES(?, NULL)",
+            (key,),
+        )
+
+        conn.commit()
+        conn.close()
+
+        print("LICENÇA GERADA:", key, "para", email)
+
+        return {"status": "license_generated", "key": key}
+
+    except Exception as e:
+        print("ERRO WEBHOOK:", e)
+        return {"status": "error"}
 
 
 # ---------------- MAIN ----------------
