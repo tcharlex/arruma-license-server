@@ -7,6 +7,8 @@ import os
 import hmac
 import hashlib
 from pathlib import Path
+import psycopg2
+import psycopg2.extras
 
 app = Flask(__name__)
 
@@ -189,7 +191,11 @@ def _verify_password(raw_password, stored_value):
         stored_bytes = stored_str.encode("utf-8")
 
     # Auto-detect bcrypt by prefix/signature in stored representation.
-    is_bcrypt = stored_str.startswith("$2a$") or stored_str.startswith("$2b$") or stored_str.startswith("$2y$")
+    is_bcrypt = (
+        stored_str.startswith("$2a$")
+        or stored_str.startswith("$2b$")
+        or stored_str.startswith("$2y$")
+    )
     if is_bcrypt:
         try:
             return bcrypt.checkpw(raw_password_bytes, stored_bytes)
