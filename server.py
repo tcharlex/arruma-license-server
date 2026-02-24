@@ -6,6 +6,7 @@ import sqlite3
 import os
 import hmac
 import hashlib
+import base64
 from pathlib import Path
 import psycopg2
 import psycopg2.extras
@@ -240,6 +241,16 @@ def _session_id_from_token(token):
 def _user_id_for_email(email):
     digest = hashlib.sha256(email.encode("utf-8")).hexdigest()[:12]
     return f"usr_{digest}"
+
+
+def _generate_offline_token(license_key, device_id):
+    secret = os.getenv("LICENSE_SIGN_KEY").encode()
+    expiry = int(time.time()) + 86400  # 24h
+
+    payload = f"{license_key}:{device_id}:{expiry}".encode()
+    sig = hmac.new(secret, payload, hashlib.sha256).digest()
+    token = base64.urlsafe_b64encode(payload + b"." + sig).decode()
+    return token, expiry
 
 
 # =========================
@@ -529,7 +540,15 @@ def v1_validate_license():
         conn.commit()
 
     conn.close()
-    return jsonify({"valid": True, "first_activation": first_activation})
+    token, expiry = _generate_offline_token(license_key, device_id)
+    return jsonify(
+        {
+            "valid": True,
+            "offline_token": token,
+            "expires": expiry,
+            "first_activation": first_activation,
+        }
+    )
 
 
 # =========================
