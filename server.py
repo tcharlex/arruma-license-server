@@ -30,6 +30,14 @@ DB = str(get_data_dir() / "auth.db")
 
 
 def db():
+    url = os.getenv("DATABASE_URL")
+
+    # Se existir DATABASE_URL → usa Postgres (Render)
+    if url:
+        conn = psycopg2.connect(url)
+        return conn
+
+    # Senão → continua usando SQLite (local)
     conn = sqlite3.connect(DB)
     conn.execute("PRAGMA journal_mode=WAL;")
     return conn
