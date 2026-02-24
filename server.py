@@ -594,6 +594,52 @@ def revoke_entitlement():
     return jsonify({"status": "revoked"})
 
 
+@app.post("/admin/create_license")
+def admin_create_license():
+
+    if not require_admin(request):
+        return jsonify({"error": "unauthorized"}), 401
+
+    data = request.json or {}
+    app_name = data.get("app", "").strip()
+
+    if not app_name:
+        return jsonify({"error": "missing_fields"}), 400
+
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+    def _new_key():
+        parts = []
+        for _ in range(3):
+            part = "".join(secrets.choice(alphabet) for _ in range(4))
+            parts.append(part)
+        return "-".join(parts)
+
+    conn = db()
+    c = conn.cursor()
+
+    license_key = None
+    for _ in range(10):
+        candidate = _new_key()
+        try:
+            c.execute(
+                "INSERT INTO licenses (license_key, app, device_id) VALUES (?, ?, ?)",
+                (candidate, app_name, None),
+            )
+            conn.commit()
+            license_key = candidate
+            break
+        except Exception:
+            continue
+
+    conn.close()
+
+    if not license_key:
+        return jsonify({"error": "could_not_create_license"}), 500
+
+    return jsonify({"license_key": license_key})
+
+
 if __name__ == "__main__":
     from waitress import serve
 
