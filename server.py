@@ -502,7 +502,7 @@ def v1_validate_license():
     conn = db()
     c = conn.cursor()
     c.execute(
-        "SELECT app, device_id FROM licenses WHERE license_key=?",
+        "SELECT app, device_id FROM licenses WHERE license_key=%s",
         (license_key,),
     )
     row = c.fetchone()
@@ -523,7 +523,7 @@ def v1_validate_license():
     first_activation = not bool(bound_device)
     if first_activation:
         c.execute(
-            "UPDATE licenses SET device_id=? WHERE license_key=?",
+            "UPDATE licenses SET device_id=? WHERE license_key=%s",
             (device_id, license_key),
         )
         conn.commit()
