@@ -1,3 +1,4 @@
 Flask
 bcrypt
 waitress
+psycopg2-binary
