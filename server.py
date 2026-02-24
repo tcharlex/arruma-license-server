@@ -422,7 +422,7 @@ def me():
         conn = db()
         c = conn.cursor()
         c.execute(
-            "UPDATE active_devices SET last_seen=? WHERE email=? AND device_id=?",
+            "UPDATE active_devices SET last_seen=? WHERE email=? AND device_id=%s",
             (int(time.time()), email, device_id),
         )
         conn.commit()
@@ -523,7 +523,7 @@ def v1_validate_license():
     first_activation = not bool(bound_device)
     if first_activation:
         c.execute(
-            "UPDATE licenses SET device_id=? WHERE license_key=%s",
+            "UPDATE licenses SET device_id=%s WHERE license_key=%s",
             (device_id, license_key),
         )
         conn.commit()
