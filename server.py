@@ -623,7 +623,7 @@ def admin_create_license():
         candidate = _new_key()
         try:
             c.execute(
-                "INSERT INTO licenses (license_key, app, device_id) VALUES (?, ?, ?)",
+                "INSERT INTO licenses (license_key, app, device_id) VALUES (%s, %s, %s)",
                 (candidate, app_name, None),
             )
             conn.commit()
