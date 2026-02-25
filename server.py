@@ -261,14 +261,14 @@ def _user_id_for_email(email):
 
 
 def _generate_offline_token(license_key, device_id):
-    expiry = int(time.time()) + 86400  # 24h
+    issued_at = int(time.time())
 
-    payload = f"{license_key}:{device_id}:{expiry}".encode()
-
+    payload = f"{license_key}:{device_id}:{issued_at}".encode()
     signature = SIGNING_KEY.sign(payload).signature
     token = base64.urlsafe_b64encode(payload + b"." + signature).decode()
 
-    return token, expiry
+    # não existe mais expiração criptográfica
+    return token, issued_at
 
 
 # =========================

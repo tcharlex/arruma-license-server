@@ -1,0 +1,12 @@
+# keys
+*.key
+*.pem
+*.env
+
+# local tools
+generate_keys.py
+
+# python
+__pycache__/
+*.pyc
+.venv/
