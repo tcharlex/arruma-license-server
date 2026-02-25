@@ -10,6 +10,8 @@ import base64
 from pathlib import Path
 import psycopg2
 import psycopg2.extras
+from nacl.signing import SigningKey
+
 
 app = Flask(__name__)
 
@@ -104,6 +106,21 @@ def init_db():
 
 
 init_db()
+
+
+# =========================
+# License Signing (Ed25519)
+# =========================
+def load_private_key():
+    key_b64 = os.getenv("LICENSE_PRIVATE_KEY")
+    if not key_b64:
+        raise RuntimeError("LICENSE_PRIVATE_KEY não configurada no ambiente")
+
+    key = base64.b64decode(key_b64)
+    return SigningKey(key)
+
+
+SIGNING_KEY = load_private_key()
 
 
 # =========================
