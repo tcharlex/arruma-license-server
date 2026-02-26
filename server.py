@@ -11,7 +11,7 @@ from pathlib import Path
 import psycopg2
 import psycopg2.extras
 from nacl.signing import SigningKey
-
+import json
 
 app = Flask(__name__)
 
@@ -96,10 +96,30 @@ def init_db():
         CREATE TABLE IF NOT EXISTS licenses (
             license_key TEXT PRIMARY KEY,
             app TEXT NOT NULL,
-            device_id TEXT
+            device_id TEXT,
+            device_pubkey TEXT,
+            reset_count INTEGER DEFAULT 0,
+            license_version INTEGER DEFAULT 0
         )
     """
     )
+
+    # Migração para bases já existentes sem device_pubkey.
+    try:
+        c.execute("ALTER TABLE licenses ADD COLUMN device_pubkey TEXT")
+    except Exception:
+        pass
+
+    # Migração para bases já existentes sem reset_count.
+    try:
+        c.execute("ALTER TABLE licenses ADD COLUMN reset_count INTEGER DEFAULT 0")
+    except Exception:
+        pass
+
+    try:
+        c.execute("ALTER TABLE licenses ADD COLUMN license_version INTEGER DEFAULT 0")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()
@@ -260,10 +280,10 @@ def _user_id_for_email(email):
     return f"usr_{digest}"
 
 
-def _generate_offline_token(license_key, device_id):
+def _generate_offline_token(license_key, device_id, license_version):
     issued_at = int(time.time())
 
-    payload = f"{license_key}:{device_id}:{issued_at}".encode()
+    payload = f"{license_key}:{device_id}:{issued_at}:{license_version}".encode()
     signature = SIGNING_KEY.sign(payload).signature
     token = base64.urlsafe_b64encode(payload + b"." + signature).decode()
 
@@ -523,15 +543,16 @@ def v1_validate_license():
     data = request.json or {}
     license_key = str(data.get("license_key", "")).strip().upper()
     device_id = str(data.get("device_id", "")).strip()
+    device_pubkey = str(data.get("device_pubkey", "")).strip()
     app_name = str(data.get("app", "")).strip().lower()
 
-    if not license_key or not device_id or not app_name:
+    if not license_key or not device_id or not device_pubkey or not app_name:
         return _error("invalid_request", "Campos obrigatórios ausentes", 400)
 
     conn = db()
     c = conn.cursor()
     c.execute(
-        "SELECT app, device_id FROM licenses WHERE license_key=%s",
+        "SELECT app, device_id, device_pubkey, license_version FROM licenses WHERE license_key=%s",
         (license_key,),
     )
     row = c.fetchone()
@@ -540,7 +561,11 @@ def v1_validate_license():
         conn.close()
         return jsonify({"valid": False, "reason": "not_found"})
 
-    stored_app, bound_device = row
+    stored_app = row[0]
+    bound_device = row[1]
+    bound_pubkey = row[2]
+    license_version = int(row[3] or 0)
+
     if str(stored_app).strip().lower() != app_name:
         conn.close()
         return jsonify({"valid": False, "reason": "not_found"})
@@ -549,22 +574,108 @@ def v1_validate_license():
         conn.close()
         return jsonify({"valid": False, "reason": "device_mismatch"})
 
+    if bound_pubkey and bound_pubkey != device_pubkey:
+        conn.close()
+        return jsonify({"valid": False, "reason": "invalid"})
+
     first_activation = not bool(bound_device)
+    needs_pubkey_bind = not bool(bound_pubkey)
     if first_activation:
         c.execute(
-            "UPDATE licenses SET device_id=%s WHERE license_key=%s",
-            (device_id, license_key),
+            """
+            UPDATE licenses
+            SET device_id=%s,
+                device_pubkey=%s
+            WHERE license_key=%s
+            AND device_id IS NULL
+            """,
+            (device_id, device_pubkey, license_key),
+        )
+
+        if c.rowcount == 0:
+            conn.close()
+            return jsonify({"valid": False, "reason": "already_bound"})
+
+        conn.commit()
+    elif needs_pubkey_bind:
+        c.execute(
+            "UPDATE licenses SET device_pubkey=%s WHERE license_key=%s",
+            (device_pubkey, license_key),
         )
         conn.commit()
-
+    # garantir versão atual da licença
+    c.execute(
+        "SELECT license_version FROM licenses WHERE license_key=%s",
+        (license_key,),
+    )
+    license_version = int(c.fetchone()[0] or 0)
     conn.close()
-    token, expiry = _generate_offline_token(license_key, device_id)
+    token, expiry = _generate_offline_token(license_key, device_id, license_version)
+    response_payload = {
+        "valid": True,
+        "license_key": license_key,
+        "device_id": device_id,
+        "offline_token": token,
+        "expires": expiry,
+        "first_activation": first_activation,
+    }
+    timestamp = int(time.time())
+    response_payload["ts"] = timestamp
+
+    # assinatura cobre TODO o estado retornado
+    canonical = json.dumps(
+        response_payload, separators=(",", ":"), sort_keys=True
+    ).encode()
+    signature = SIGNING_KEY.sign(canonical).signature
+    response_payload["sig"] = base64.b64encode(signature).decode("utf-8")
+
+    return jsonify(response_payload)
+
+
+@app.post("/v1/licenses/reset")
+def v1_reset_license():
+    if not require_admin(request):
+        return jsonify({"error": "unauthorized"}), 401
+
+    data = request.json or {}
+    license_key = str(data.get("license_key", "")).strip().upper()
+    if not license_key:
+        return _error("invalid_request", "Campos obrigatórios ausentes", 400)
+
+    conn = db()
+    c = conn.cursor()
+    c.execute(
+        "SELECT reset_count FROM licenses WHERE license_key=%s",
+        (license_key,),
+    )
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not_found"}), 404
+
+    reset_count = int(row[0] or 0)
+    if reset_count >= 3:
+        conn.close()
+        return jsonify({"error": "reset_limit_reached"}), 403
+
+    c.execute(
+        """
+        UPDATE licenses
+        SET device_id = NULL,
+            device_pubkey = NULL,
+            reset_count = reset_count + 1,
+            license_version = license_version + 1
+        WHERE license_key = %s
+        """,
+        (license_key,),
+    )
+    conn.commit()
+    conn.close()
+
     return jsonify(
         {
-            "valid": True,
-            "offline_token": token,
-            "expires": expiry,
-            "first_activation": first_activation,
+            "status": "reset_ok",
+            "resets_remaining": 3 - reset_count - 1,
         }
     )
 
