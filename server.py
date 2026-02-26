@@ -291,6 +291,16 @@ def _generate_offline_token(license_key, device_id, license_version):
     return token, issued_at
 
 
+def _signed_validate_response(payload: dict):
+    response_payload = dict(payload)
+    canonical = json.dumps(
+        response_payload, separators=(",", ":"), sort_keys=True
+    ).encode()
+    signature = SIGNING_KEY.sign(canonical).signature
+    response_payload["sig"] = base64.b64encode(signature).decode("utf-8")
+    return jsonify(response_payload)
+
+
 # =========================
 # Login
 # =========================
@@ -559,7 +569,7 @@ def v1_validate_license():
 
     if not row:
         conn.close()
-        return jsonify({"valid": False, "reason": "not_found"})
+        return _signed_validate_response({"valid": False, "reason": "not_found"})
 
     stored_app = row[0]
     bound_device = row[1]
@@ -568,15 +578,15 @@ def v1_validate_license():
 
     if str(stored_app).strip().lower() != app_name:
         conn.close()
-        return jsonify({"valid": False, "reason": "not_found"})
+        return _signed_validate_response({"valid": False, "reason": "not_found"})
 
     if bound_device and bound_device != device_id:
         conn.close()
-        return jsonify({"valid": False, "reason": "device_mismatch"})
+        return _signed_validate_response({"valid": False, "reason": "device_mismatch"})
 
     if bound_pubkey and bound_pubkey != device_pubkey:
         conn.close()
-        return jsonify({"valid": False, "reason": "invalid"})
+        return _signed_validate_response({"valid": False, "reason": "invalid"})
 
     first_activation = not bool(bound_device)
     needs_pubkey_bind = not bool(bound_pubkey)
@@ -594,7 +604,9 @@ def v1_validate_license():
 
         if c.rowcount == 0:
             conn.close()
-            return jsonify({"valid": False, "reason": "already_bound"})
+            return _signed_validate_response(
+                {"valid": False, "reason": "already_bound"}
+            )
 
         conn.commit()
     elif needs_pubkey_bind:
@@ -619,17 +631,7 @@ def v1_validate_license():
         "expires": expiry,
         "first_activation": first_activation,
     }
-    timestamp = int(time.time())
-    response_payload["ts"] = timestamp
-
-    # assinatura cobre TODO o estado retornado
-    canonical = json.dumps(
-        response_payload, separators=(",", ":"), sort_keys=True
-    ).encode()
-    signature = SIGNING_KEY.sign(canonical).signature
-    response_payload["sig"] = base64.b64encode(signature).decode("utf-8")
-
-    return jsonify(response_payload)
+    return _signed_validate_response(response_payload)
 
 
 @app.post("/v1/licenses/reset")
