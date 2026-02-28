@@ -701,7 +701,7 @@ def grant_entitlement():
     conn = db()
     c = conn.cursor()
 
-    c.execute("SELECT email FROM users WHERE email=?", (email,))
+    c.execute("SELECT email FROM users WHERE email=%?", (email,))
     if not c.fetchone():
         conn.close()
         return jsonify({"error": "account_not_found"}), 404
