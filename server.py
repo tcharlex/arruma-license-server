@@ -151,7 +151,7 @@ def has_product(email, product):
     c = conn.cursor()
 
     c.execute(
-        "SELECT 1 FROM entitlements WHERE email=%? AND product=? AND revoked=0",
+        "SELECT 1 FROM entitlements WHERE email=%s AND product=%s AND revoked=0",
         (email, product),
     )
 
@@ -701,7 +701,7 @@ def grant_entitlement():
     conn = db()
     c = conn.cursor()
 
-    c.execute("SELECT email FROM users WHERE email=%?", (email,))
+    c.execute("SELECT email FROM users WHERE email=%s", (email,))
     if not c.fetchone():
         conn.close()
         return jsonify({"error": "account_not_found"}), 404
