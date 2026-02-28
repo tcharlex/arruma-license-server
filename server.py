@@ -13,8 +13,12 @@ import psycopg2.extras
 from nacl.signing import SigningKey
 import json
 
-app = Flask(__name__)
 
+app = Flask(__name__)
+# blueprints
+from admin import admin_bp
+
+app.register_blueprint(admin_bp)
 TOKEN_DURATION = 60 * 60 * 24 * 90  # 90 dias
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "DEV_ADMIN_TOKEN")
 
