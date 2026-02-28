@@ -122,3 +122,40 @@ def reset_device():
     conn.close()
 
     return {"status": "device reset"}
+
+
+@admin_bp.post("/register_license", endpoint="register_license")
+def register_license():
+    token = request.headers.get("Authorization")
+    if token != f"Bearer {os.getenv('INTERNAL_API')}":
+        return {"error": "unauthorized"}, 401
+
+    data = request.json
+    key = data.get("key")
+    email = data.get("email")
+    product = data.get("product")
+
+    if not key:
+        return {"error": "missing_key"}, 400
+
+    conn = db()
+    c = conn.cursor()
+
+    # se já existir, ignora
+    c.execute("SELECT license_key FROM licenses WHERE license_key=%s", (key,))
+    if c.fetchone():
+        conn.close()
+        return {"status": "exists"}
+
+    c.execute(
+        """
+        INSERT INTO licenses (license_key, app, device_id, device_pubkey, reset_count)
+        VALUES (%s, %s, NULL, NULL, 0)
+    """,
+        (key, product),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {"status": "created"}
