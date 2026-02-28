@@ -8,7 +8,9 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
 
 def check():
-    return request.headers.get("Authorization") == f"Bearer {ADMIN_TOKEN}"
+    token_ok = request.headers.get("Authorization") == f"Bearer {ADMIN_TOKEN}"
+    ip_ok = allowed_ip()
+    return token_ok and ip_ok
 
 
 @admin_bp.get("/users")
@@ -35,3 +37,12 @@ def licenses():
     c.execute("SELECT license_key, app, device_id FROM licenses")
     rows = [{"key": r[0], "app": r[1], "device": r[2]} for r in c.fetchall()]
     return jsonify(rows)
+
+
+def allowed_ip():
+    allowed = os.getenv("ADMIN_IP")
+    if not allowed:
+        return True
+    return request.headers.get("X-Forwarded-For", request.remote_addr).startswith(
+        allowed
+    )
