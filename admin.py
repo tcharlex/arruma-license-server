@@ -32,8 +32,6 @@ def licenses():
 
     conn = db()
     c = conn.cursor()
-    c.execute("SELECT email, product FROM licenses")
-    rows = c.fetchall()
-    conn.close()
-
+    c.execute("SELECT license_key, app, device_id FROM licenses")
+    rows = [{"key": r[0], "app": r[1], "device": r[2]} for r in c.fetchall()]
     return jsonify(rows)
