@@ -73,8 +73,8 @@ def revoke():
     return {"status": "revoked"}
 
 
-@admin_bp.post("/revoke")
-def revoke():
+@admin_bp.post("/revoke", endpoint="revoke_license")
+def revoke_license():
     if not check():
         return {"error": "unauthorized"}, 401
 
