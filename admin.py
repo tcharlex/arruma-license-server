@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 import os
-from server import db
+from database import db
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 

@@ -12,7 +12,7 @@ import psycopg2
 import psycopg2.extras
 from nacl.signing import SigningKey
 import json
-
+from database import db
 
 app = Flask(__name__)
 # blueprints
@@ -34,20 +34,6 @@ def get_data_dir():
 
 
 DB = str(get_data_dir() / "auth.db")
-
-
-def db():
-    url = os.getenv("DATABASE_URL")
-
-    # Se existir DATABASE_URL → usa Postgres (Render)
-    if url:
-        conn = psycopg2.connect(url)
-        return conn
-
-    # Senão → continua usando SQLite (local)
-    conn = sqlite3.connect(DB)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    return conn
 
 
 def init_db():
