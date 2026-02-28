@@ -91,3 +91,34 @@ def revoke_license():
     conn.close()
 
     return {"status": "revoked"}
+
+
+@admin_bp.post("/reset_device", endpoint="reset_device")
+def reset_device():
+    if not check():
+        return {"error": "unauthorized"}, 401
+
+    data = request.json
+    key = data.get("key")
+
+    if not key:
+        return {"error": "missing key"}, 400
+
+    conn = db()
+    c = conn.cursor()
+
+    c.execute(
+        """
+        UPDATE licenses
+        SET device_id = NULL,
+            device_pubkey = NULL,
+            reset_count = reset_count + 1
+        WHERE license_key = %s
+    """,
+        (key,),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {"status": "device reset"}
