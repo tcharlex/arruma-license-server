@@ -452,7 +452,7 @@ def register():
     conn = db()
     c = conn.cursor()
 
-    c.execute("SELECT email FROM users WHERE email=%?", (email,))
+    c.execute("SELECT email FROM users WHERE email=%s", (email,))
     if c.fetchone():
         conn.close()
         return jsonify({"error": "email_exists"}), 409
@@ -707,7 +707,11 @@ def grant_entitlement():
         return jsonify({"error": "account_not_found"}), 404
 
     c.execute(
-        "INSERT OR REPLACE INTO entitlements (email, product, revoked) VALUES (%?, %?, 0)",
+        """
+        INSERT INTO entitlements (email, product, revoked)
+        VALUES (%s, %s, 0)
+        ON CONFLICT (email, product) DO UPDATE SET revoked=0
+        """,
         (email, product),
     )
 
