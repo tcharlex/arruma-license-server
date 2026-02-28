@@ -174,7 +174,7 @@ def validate_session_request(req):
     conn = db()
     c = conn.cursor()
 
-    c.execute("SELECT email, expires FROM sessions WHERE token=%?", (token,))
+    c.execute("SELECT email, expires FROM sessions WHERE token=%s", (token,))
     row = c.fetchone()
 
     if not row:
@@ -184,7 +184,7 @@ def validate_session_request(req):
     email, expires = row
 
     if time.time() > expires:
-        c.execute("DELETE FROM sessions WHERE token=%?", (token,))
+        c.execute("DELETE FROM sessions WHERE token=%s", (token,))
         conn.commit()
         conn.close()
         return False, None
@@ -256,7 +256,7 @@ def _get_entitlements(email):
     conn = db()
     c = conn.cursor()
     c.execute(
-        "SELECT product FROM entitlements WHERE email=%? AND revoked=0 ORDER BY product",
+        "SELECT product FROM entitlements WHERE email=%s AND revoked=0 ORDER BY product",
         (email,),
     )
     rows = c.fetchall()
@@ -330,7 +330,7 @@ def v1_login():
         conn.close()
         return _error("product_required", "Acesso ao produto não encontrado", 403)
 
-    c.execute("SELECT device_id FROM active_devices WHERE email=%?", (email,))
+    c.execute("SELECT device_id FROM active_devices WHERE email=%s", (email,))
     existing = c.fetchone()
     if existing and existing[0] != device_id:
         conn.close()
@@ -342,11 +342,11 @@ def v1_login():
     refresh_token = secrets.token_hex(32)
 
     c.execute(
-        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (%?, %?, %?)",
+        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (%s, %s, %s)",
         (email, device_id, now),
     )
     c.execute(
-        "INSERT OR REPLACE INTO sessions (token, email, expires) VALUES (%?, %?, %?)",
+        "INSERT OR REPLACE INTO sessions (token, email, expires) VALUES (%s, %s, %s)",
         (access_token, email, now + access_expires_in),
     )
 
@@ -391,7 +391,7 @@ def login():
     c = conn.cursor()
 
     # validar senha
-    c.execute("SELECT password FROM users WHERE email=%?", (email,))
+    c.execute("SELECT password FROM users WHERE email=%s", (email,))
     row = c.fetchone()
     if not row or not bcrypt.checkpw(password.encode(), row[0]):
         conn.close()
@@ -405,7 +405,7 @@ def login():
     # =========================
     # BLOQUEIO DE SEGUNDO PC
     # =========================
-    c.execute("SELECT device_id FROM active_devices WHERE email=%?", (email,))
+    c.execute("SELECT device_id FROM active_devices WHERE email=%s", (email,))
     existing = c.fetchone()
 
     if existing and existing[0] != device_id:
@@ -414,7 +414,7 @@ def login():
 
     # registrar dispositivo
     c.execute(
-        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (%?, %?, %?)",
+        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (%s, %s, %s)",
         (email, device_id, int(time.time())),
     )
 
@@ -423,7 +423,7 @@ def login():
     expires = int(time.time() + TOKEN_DURATION)
 
     c.execute(
-        "INSERT OR REPLACE INTO sessions (token, email, expires) VALUES (?, ?, ?)",
+        "INSERT OR REPLACE INTO sessions (token, email, expires) VALUES (%s, %s, %s)",
         (token, email, expires),
     )
 
@@ -458,7 +458,7 @@ def register():
         return jsonify({"error": "email_exists"}), 409
 
     pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-    c.execute("INSERT INTO users (email, password) VALUES (%?, %?)", (email, pw_hash))
+    c.execute("INSERT INTO users (email, password) VALUES (%s, %s)", (email, pw_hash))
 
     conn.commit()
     conn.close()
@@ -524,7 +524,7 @@ def v1_me():
         return _error("device_not_authorized", "Dispositivo não autorizado", 403)
 
     c.execute(
-        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (%?, %?, %?)",
+        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (%s, %s, %s)",
         (email, device_id, now),
     )
     conn.commit()
