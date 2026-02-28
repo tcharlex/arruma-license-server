@@ -43,6 +43,11 @@ def allowed_ip():
     allowed = os.getenv("ADMIN_IP")
     if not allowed:
         return True
-    return request.headers.get("X-Forwarded-For", request.remote_addr).startswith(
-        allowed
-    )
+
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+
+    # permitir localhost em desenvolvimento
+    if ip.startswith("127.0.0.1") or ip.startswith("192.168."):
+        return True
+
+    return ip.startswith(allowed)
