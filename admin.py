@@ -51,3 +51,23 @@ def allowed_ip():
         return True
 
     return ip.startswith(allowed)
+
+
+@admin_bp.post("/revoke")
+def revoke():
+    if not check():
+        return {"error": "unauthorized"}, 401
+
+    data = request.json
+    key = data.get("key")
+
+    if not key:
+        return {"error": "missing key"}, 400
+
+    conn = db()
+    c = conn.cursor()
+    c.execute("DELETE FROM licenses WHERE license_key = %s", (key,))
+    conn.commit()
+    conn.close()
+
+    return {"status": "revoked"}
