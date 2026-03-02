@@ -48,19 +48,6 @@ if not INTERNAL_API_TOKEN:
     raise RuntimeError("INTERNAL_API não configurado no ambiente")
 
 
-# =========================
-# Banco
-# =========================
-def get_data_dir():
-    base = os.getenv("DATA_DIR") or os.getenv("FILEFLOW_DATA_DIR")
-    path = Path(base) if base else Path.home() / ".fileflow_downloads"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-DB = str(get_data_dir() / "auth.db")
-
-
 def init_db():
     conn = db()
     c = conn.cursor()
