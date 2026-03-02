@@ -784,6 +784,36 @@ def admin_create_license():
     return jsonify({"license_key": license_key})
 
 
+def generate_license_key(app_name):
+    prefix = app_name[:2].upper()
+    part1 = secrets.token_hex(2).upper()
+    part2 = secrets.token_hex(2).upper()
+    part3 = secrets.token_hex(2).upper()
+    return f"{prefix}-{part1}-{part2}-{part3}"
+
+
+@app.post("/internal/create_license")
+def internal_create_license():
+    if request.headers.get("X-Internal-Key") != os.getenv("INTERNAL_API"):
+        return {"error": "unauthorized"}, 401
+
+    data = request.json
+    app_name = data.get("app")
+
+    key = generate_license_key(app_name)
+
+    conn = db()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO licenses (license_key, app, device_id) VALUES (%s, %s, NULL)",
+        (key, app_name),
+    )
+    conn.commit()
+    conn.close()
+
+    return {"license_key": key}
+
+
 if __name__ == "__main__":
     from waitress import serve
 
