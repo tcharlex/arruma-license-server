@@ -53,27 +53,7 @@ def allowed_ip():
     return ip.startswith(allowed)
 
 
-@admin_bp.post("/revoke")
-def revoke():
-    if not check():
-        return {"error": "unauthorized"}, 401
-
-    data = request.json
-    key = data.get("key")
-
-    if not key:
-        return {"error": "missing key"}, 400
-
-    conn = db()
-    c = conn.cursor()
-    c.execute("DELETE FROM licenses WHERE license_key = %s", (key,))
-    conn.commit()
-    conn.close()
-
-    return {"status": "revoked"}
-
-
-@admin_bp.post("/revoke", endpoint="revoke_license")
+@admin_bp.post("/revoke_license", endpoint="revoke_license")
 def revoke_license():
     if not check():
         return {"error": "unauthorized"}, 401
@@ -86,7 +66,7 @@ def revoke_license():
 
     conn = db()
     c = conn.cursor()
-    c.execute("DELETE FROM licenses WHERE license_key = %s", (key,))
+    c.execute("DELETE FROM licenses WHERE license_key = ?", (key,))
     conn.commit()
     conn.close()
 
@@ -113,7 +93,7 @@ def reset_device():
         SET device_id = NULL,
             device_pubkey = NULL,
             reset_count = reset_count + 1
-        WHERE license_key = %s
+        WHERE license_key = ?
     """,
         (key,),
     )
@@ -142,7 +122,7 @@ def register_license():
     c = conn.cursor()
 
     # se já existir, ignora
-    c.execute("SELECT license_key FROM licenses WHERE license_key=%s", (key,))
+    c.execute("SELECT license_key FROM licenses WHERE license_key=?", (key,))
     if c.fetchone():
         conn.close()
         return {"status": "exists"}
@@ -150,7 +130,7 @@ def register_license():
     c.execute(
         """
         INSERT INTO licenses (license_key, app, device_id, device_pubkey, reset_count)
-        VALUES (%s, %s, NULL, NULL, 0)
+        VALUES (?, ?, NULL, NULL, 0)
     """,
         (key, product),
     )

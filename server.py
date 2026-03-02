@@ -44,7 +44,7 @@ def init_db():
         """
         CREATE TABLE IF NOT EXISTS users (
             email TEXT PRIMARY KEY,
-            password BYTEA
+            password BLOB
         )
     """
     )
@@ -141,7 +141,7 @@ def has_product(email, product):
     c = conn.cursor()
 
     c.execute(
-        "SELECT 1 FROM entitlements WHERE email=%s AND product=%s AND revoked=0",
+        "SELECT 1 FROM entitlements WHERE email=? AND product=? AND revoked=0",
         (email, product),
     )
 
@@ -164,7 +164,7 @@ def validate_session_request(req):
     conn = db()
     c = conn.cursor()
 
-    c.execute("SELECT email, expires FROM sessions WHERE token=%s", (token,))
+    c.execute("SELECT email, expires FROM sessions WHERE token=?", (token,))
     row = c.fetchone()
 
     if not row:
@@ -174,7 +174,7 @@ def validate_session_request(req):
     email, expires = row
 
     if time.time() > expires:
-        c.execute("DELETE FROM sessions WHERE token=%s", (token,))
+        c.execute("DELETE FROM sessions WHERE token=?", (token,))
         conn.commit()
         conn.close()
         return False, None
@@ -246,7 +246,7 @@ def _get_entitlements(email):
     conn = db()
     c = conn.cursor()
     c.execute(
-        "SELECT product FROM entitlements WHERE email=%s AND revoked=0 ORDER BY product",
+        "SELECT product FROM entitlements WHERE email=? AND revoked=0 ORDER BY product",
         (email,),
     )
     rows = c.fetchall()
@@ -320,7 +320,7 @@ def v1_login():
         conn.close()
         return _error("product_required", "Acesso ao produto não encontrado", 403)
 
-    c.execute("SELECT device_id FROM active_devices WHERE email=%s", (email,))
+    c.execute("SELECT device_id FROM active_devices WHERE email=?", (email,))
     existing = c.fetchone()
     if existing and existing[0] != device_id:
         conn.close()
@@ -332,11 +332,11 @@ def v1_login():
     refresh_token = secrets.token_hex(32)
 
     c.execute(
-        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (%s, %s, %s)",
+        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (?, ?, ?)",
         (email, device_id, now),
     )
     c.execute(
-        "INSERT OR REPLACE INTO sessions (token, email, expires) VALUES (%s, %s, %s)",
+        "INSERT OR REPLACE INTO sessions (token, email, expires) VALUES (?, ?, ?)",
         (access_token, email, now + access_expires_in),
     )
 
@@ -381,7 +381,7 @@ def login():
     c = conn.cursor()
 
     # validar senha
-    c.execute("SELECT password FROM users WHERE email=%s", (email,))
+    c.execute("SELECT password FROM users WHERE email=?", (email,))
     row = c.fetchone()
     if not row or not bcrypt.checkpw(password.encode(), row[0]):
         conn.close()
@@ -395,7 +395,7 @@ def login():
     # =========================
     # BLOQUEIO DE SEGUNDO PC
     # =========================
-    c.execute("SELECT device_id FROM active_devices WHERE email=%s", (email,))
+    c.execute("SELECT device_id FROM active_devices WHERE email=?", (email,))
     existing = c.fetchone()
 
     if existing and existing[0] != device_id:
@@ -404,7 +404,7 @@ def login():
 
     # registrar dispositivo
     c.execute(
-        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (%s, %s, %s)",
+        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (?, ?, ?)",
         (email, device_id, int(time.time())),
     )
 
@@ -413,7 +413,7 @@ def login():
     expires = int(time.time() + TOKEN_DURATION)
 
     c.execute(
-        "INSERT OR REPLACE INTO sessions (token, email, expires) VALUES (%s, %s, %s)",
+        "INSERT OR REPLACE INTO sessions (token, email, expires) VALUES (?, ?, ?)",
         (token, email, expires),
     )
 
@@ -442,13 +442,13 @@ def register():
     conn = db()
     c = conn.cursor()
 
-    c.execute("SELECT email FROM users WHERE email=%s", (email,))
+    c.execute("SELECT email FROM users WHERE email=?", (email,))
     if c.fetchone():
         conn.close()
         return jsonify({"error": "email_exists"}), 409
 
     pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-    c.execute("INSERT INTO users (email, password) VALUES (%s, %s)", (email, pw_hash))
+    c.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, pw_hash))
 
     conn.commit()
     conn.close()
@@ -471,7 +471,7 @@ def me():
         conn = db()
         c = conn.cursor()
         c.execute(
-            "UPDATE active_devices SET last_seen=? WHERE email=? AND device_id=%s",
+            "UPDATE active_devices SET last_seen=? WHERE email=? AND device_id=?",
             (int(time.time()), email, device_id),
         )
         conn.commit()
@@ -514,7 +514,7 @@ def v1_me():
         return _error("device_not_authorized", "Dispositivo não autorizado", 403)
 
     c.execute(
-        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (%s, %s, %s)",
+        "INSERT OR REPLACE INTO active_devices (email, device_id, last_seen) VALUES (?, ?, ?)",
         (email, device_id, now),
     )
     conn.commit()
@@ -552,7 +552,7 @@ def v1_validate_license():
     conn = db()
     c = conn.cursor()
     c.execute(
-        "SELECT app, device_id, device_pubkey, license_version FROM licenses WHERE license_key=%s",
+        "SELECT app, device_id, device_pubkey, license_version FROM licenses WHERE license_key=?",
         (license_key,),
     )
     row = c.fetchone()
@@ -584,9 +584,9 @@ def v1_validate_license():
         c.execute(
             """
             UPDATE licenses
-            SET device_id=%s,
-                device_pubkey=%s
-            WHERE license_key=%s
+            SET device_id=?,
+                device_pubkey=?
+            WHERE license_key=?
             AND device_id IS NULL
             """,
             (device_id, device_pubkey, license_key),
@@ -601,13 +601,13 @@ def v1_validate_license():
         conn.commit()
     elif needs_pubkey_bind:
         c.execute(
-            "UPDATE licenses SET device_pubkey=%s WHERE license_key=%s",
+            "UPDATE licenses SET device_pubkey=? WHERE license_key=?",
             (device_pubkey, license_key),
         )
         conn.commit()
     # garantir versão atual da licença
     c.execute(
-        "SELECT license_version FROM licenses WHERE license_key=%s",
+        "SELECT license_version FROM licenses WHERE license_key=?",
         (license_key,),
     )
     license_version = int(c.fetchone()[0] or 0)
@@ -637,7 +637,7 @@ def v1_reset_license():
     conn = db()
     c = conn.cursor()
     c.execute(
-        "SELECT reset_count FROM licenses WHERE license_key=%s",
+        "SELECT reset_count FROM licenses WHERE license_key=?",
         (license_key,),
     )
     row = c.fetchone()
@@ -657,7 +657,7 @@ def v1_reset_license():
             device_pubkey = NULL,
             reset_count = reset_count + 1,
             license_version = license_version + 1
-        WHERE license_key = %s
+        WHERE license_key = ?
         """,
         (license_key,),
     )
@@ -673,6 +673,94 @@ def v1_reset_license():
 
 
 # =========================
+
+# =========================
+# Compat — endpoints usados pelo website antigo
+# =========================
+@app.get("/api/license")
+def api_license():
+    email = (request.args.get('email') or '').lower().strip()
+    product = (request.args.get('product') or '').strip()
+    if not email or not product:
+        return jsonify({'has_license': False, 'error': 'missing_fields'}), 400
+    # Sem exigir sessão aqui porque o website usa isso como consulta simples.
+    conn = db()
+    c = conn.cursor()
+    c.execute('SELECT revoked FROM entitlements WHERE email=? AND product=?', (email, product))
+    row = c.fetchone()
+    conn.close()
+    has = bool(row) and int(row[0] or 0) == 0
+    return jsonify({'has_license': has, 'email': email, 'product': product})
+
+@app.post("/v1/internal/licenses/grant")
+def v1_internal_grant():
+    # Mesmo comportamento do /admin/grant (token ADMIN_TOKEN)
+    if not require_admin(request):
+        return jsonify({'error': 'unauthorized'}), 401
+    data = request.json or {}
+    email = (data.get('email') or '').lower().strip()
+    product = (data.get('product') or '').strip()
+    if not email or not product:
+        return jsonify({'error': 'missing_fields'}), 400
+    conn = db()
+    c = conn.cursor()
+    c.execute('SELECT email FROM users WHERE email=?', (email,))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({'error': 'account_not_found'}), 404
+    c.execute('INSERT INTO entitlements (email, product, revoked) VALUES (?, ?, 0) ON CONFLICT(email, product) DO UPDATE SET revoked=0', (email, product))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'granted'})
+
+
+@app.get("/v1/internal/licenses/status")
+def v1_internal_license_status():
+    if not require_admin(request):
+        return jsonify({"error": "unauthorized"}), 401
+
+    license_key = (request.args.get("license_key") or "").strip().upper()
+    if not license_key:
+        return jsonify({"error": "missing_fields"}), 400
+
+    conn = db()
+    c = conn.cursor()
+    c.execute("SELECT device_id FROM licenses WHERE license_key=?", (license_key,))
+    row = c.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"found": False, "activated": False, "license_key": license_key}), 404
+
+    return jsonify(
+        {
+            "found": True,
+            "activated": bool(row[0]),
+            "license_key": license_key,
+        }
+    )
+
+
+@app.post("/v1/internal/users/verify")
+def v1_internal_verify_user():
+    if not require_admin(request):
+        return jsonify({"error": "unauthorized"}), 401
+
+    data = request.json or {}
+    email = (data.get("email") or "").lower().strip()
+    password = data.get("password", "")
+    if not email or not password:
+        return jsonify({"error": "missing_fields"}), 400
+
+    conn = db()
+    c = conn.cursor()
+    c.execute("SELECT password FROM users WHERE email=?", (email,))
+    row = c.fetchone()
+    conn.close()
+
+    valid = bool(row) and _verify_password(password, row[0])
+    return jsonify({"valid": valid, "email": email})
+
 # ADMIN — conceder acesso
 # =========================
 @app.post("/admin/grant")
@@ -691,7 +779,7 @@ def grant_entitlement():
     conn = db()
     c = conn.cursor()
 
-    c.execute("SELECT email FROM users WHERE email=%s", (email,))
+    c.execute("SELECT email FROM users WHERE email=?", (email,))
     if not c.fetchone():
         conn.close()
         return jsonify({"error": "account_not_found"}), 404
@@ -699,7 +787,7 @@ def grant_entitlement():
     c.execute(
         """
         INSERT INTO entitlements (email, product, revoked)
-        VALUES (%s, %s, 0)
+        VALUES (?, ?, 0)
         ON CONFLICT (email, product) DO UPDATE SET revoked=0
         """,
         (email, product),
@@ -767,7 +855,7 @@ def admin_create_license():
         candidate = _new_key()
         try:
             c.execute(
-                "INSERT INTO licenses (license_key, app, device_id) VALUES (%s, %s, %s)",
+                "INSERT INTO licenses (license_key, app, device_id) VALUES (?, ?, ?)",
                 (candidate, app_name, None),
             )
             conn.commit()
@@ -805,7 +893,7 @@ def internal_create_license():
     conn = db()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO licenses (license_key, app, device_id) VALUES (%s, %s, NULL)",
+        "INSERT INTO licenses (license_key, app, device_id) VALUES (?, ?, NULL)",
         (key, app_name),
     )
     conn.commit()
