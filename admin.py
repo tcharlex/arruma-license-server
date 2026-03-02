@@ -123,10 +123,12 @@ def register_license():
     data = request.json
     key = data.get("key")
     email = data.get("email")
-    product = data.get("product")
+    product = (data.get("product") or "").strip().lower()
 
     if not key:
         return {"error": "missing_key"}, 400
+    if not product:
+        return {"error": "missing_product"}, 400
 
     conn = db()
     c = conn.cursor()

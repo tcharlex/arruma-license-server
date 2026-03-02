@@ -729,7 +729,7 @@ def api_license():
     if not (require_admin(request) or require_internal(request)):
         return jsonify({"error": "unauthorized"}), 401
     email = (request.args.get('email') or '').lower().strip()
-    product = (request.args.get('product') or '').strip()
+    product = (request.args.get('product') or '').strip().lower()
     if not email or not product:
         return jsonify({'has_license': False, 'error': 'missing_fields'}), 400
     # Sem exigir sessão aqui porque o website usa isso como consulta simples.
@@ -747,7 +747,7 @@ def v1_internal_grant():
         return jsonify({'error': 'unauthorized'}), 401
     data = request.json or {}
     email = (data.get('email') or '').lower().strip()
-    product = (data.get('product') or '').strip()
+    product = (data.get('product') or '').strip().lower()
     if not email or not product:
         return jsonify({'error': 'missing_fields'}), 400
     conn = db()
@@ -823,7 +823,7 @@ def grant_entitlement():
 
     data = request.json or {}
     email = data.get("email", "").lower().strip()
-    product = data.get("product", "").strip()
+    product = data.get("product", "").strip().lower()
 
     if not email or not product:
         return jsonify({"error": "missing_fields"}), 400
@@ -862,7 +862,7 @@ def revoke_entitlement():
 
     data = request.json or {}
     email = data.get("email", "").lower().strip()
-    product = data.get("product", "").strip()
+    product = data.get("product", "").strip().lower()
 
     conn = db()
     c = conn.cursor()
@@ -885,7 +885,7 @@ def admin_create_license():
         return jsonify({"error": "unauthorized"}), 401
 
     data = request.json or {}
-    app_name = data.get("app", "").strip()
+    app_name = data.get("app", "").strip().lower()
 
     if not app_name:
         return jsonify({"error": "missing_fields"}), 400
@@ -938,7 +938,7 @@ def internal_create_license():
         return {"error": "unauthorized"}, 401
 
     data = request.json or {}
-    app_name = str(data.get("app", "")).strip()
+    app_name = str(data.get("app", "")).strip().lower()
     if not app_name:
         return {"error": "missing_fields"}, 400
 
