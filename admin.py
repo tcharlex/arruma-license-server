@@ -44,7 +44,16 @@ def allowed_ip():
     if not allowed:
         return True
 
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    ip = request.remote_addr or ""
+    trust_xff = str(os.getenv("TRUST_X_FORWARDED_FOR", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if trust_xff:
+        xff = request.headers.get("X-Forwarded-For", "")
+        if xff:
+            ip = xff.split(",")[0].strip()
 
     # permitir localhost em desenvolvimento
     if ip.startswith("127.0.0.1") or ip.startswith("192.168."):
@@ -107,7 +116,8 @@ def reset_device():
 @admin_bp.post("/register_license", endpoint="register_license")
 def register_license():
     token = request.headers.get("Authorization")
-    if token != f"Bearer {os.getenv('INTERNAL_API')}":
+    internal = os.getenv("INTERNAL_API")
+    if not internal or token != f"Bearer {internal}":
         return {"error": "unauthorized"}, 401
 
     data = request.json

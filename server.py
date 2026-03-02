@@ -7,6 +7,7 @@ import os
 import hmac
 import hashlib
 import base64
+import threading
 from pathlib import Path
 import psycopg2
 import psycopg2.extras
@@ -14,13 +15,37 @@ from nacl.signing import SigningKey
 import json
 from database import db
 
+
+def _load_local_env():
+    candidates = [Path(__file__).resolve().parent / ".env"]
+    for env_path in candidates:
+        if not env_path.exists():
+            continue
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and value and key not in os.environ:
+                os.environ[key] = value
+
+
+_load_local_env()
+
 app = Flask(__name__)
 # blueprints
 from admin import admin_bp
 
 app.register_blueprint(admin_bp)
 TOKEN_DURATION = 60 * 60 * 24 * 90  # 90 dias
-ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "DEV_ADMIN_TOKEN")
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN")
+INTERNAL_API_TOKEN = os.environ.get("INTERNAL_API")
+if not ADMIN_TOKEN:
+    raise RuntimeError("ADMIN_TOKEN não configurado no ambiente")
+if not INTERNAL_API_TOKEN:
+    raise RuntimeError("INTERNAL_API não configurado no ambiente")
 
 
 # =========================
@@ -152,6 +177,30 @@ def has_product(email, product):
 
 def require_admin(req):
     return req.headers.get("Authorization") == f"Bearer {ADMIN_TOKEN}"
+
+
+def require_internal(req):
+    bearer = req.headers.get("Authorization")
+    x_internal = req.headers.get("X-Internal-Key")
+    return bearer == f"Bearer {INTERNAL_API_TOKEN}" or x_internal == INTERNAL_API_TOKEN
+
+
+_RATE_LIMIT_LOCK = threading.Lock()
+_RATE_LIMIT_BUCKETS = {}
+
+
+def _rate_limit_exceeded(bucket, key, limit, window_seconds=60):
+    if not key:
+        key = "unknown"
+    now = time.time()
+    slot = (bucket, str(key))
+    with _RATE_LIMIT_LOCK:
+        window_start, count = _RATE_LIMIT_BUCKETS.get(slot, (now, 0))
+        if now - window_start > window_seconds:
+            window_start, count = now, 0
+        count += 1
+        _RATE_LIMIT_BUCKETS[slot] = (window_start, count)
+        return count > limit
 
 
 def validate_session_request(req):
@@ -306,6 +355,10 @@ def v1_login():
 
     if not email or not password or not product or not device_id:
         return _error("invalid_request", "Campos obrigatórios ausentes", 400)
+    if _rate_limit_exceeded("v1_login_ip", request.remote_addr, 60):
+        return _error("too_many_requests", "Muitas tentativas. Tente novamente.", 429)
+    if _rate_limit_exceeded("v1_login_email", email, 20):
+        return _error("too_many_requests", "Muitas tentativas. Tente novamente.", 429)
 
     conn = db()
     c = conn.cursor()
@@ -376,6 +429,10 @@ def login():
         return jsonify({"error": "missing_device"}), 400
     if not product:
         return jsonify({"error": "missing_product"}), 400
+    if _rate_limit_exceeded("login_ip", request.remote_addr, 60):
+        return jsonify({"error": "too_many_requests"}), 429
+    if _rate_limit_exceeded("login_email", email, 20):
+        return jsonify({"error": "too_many_requests"}), 429
 
     conn = db()
     c = conn.cursor()
@@ -436,7 +493,10 @@ def register():
     if not email or not password:
         return jsonify({"error": "missing_fields"}), 400
 
-    if len(password) < 4:
+    if _rate_limit_exceeded("register_ip", request.remote_addr, 30):
+        return _error("too_many_requests", "Muitas tentativas. Tente novamente.", 429)
+
+    if len(password) < 8:
         return jsonify({"error": "weak_password"}), 400
 
     conn = db()
@@ -679,6 +739,8 @@ def v1_reset_license():
 # =========================
 @app.get("/api/license")
 def api_license():
+    if not (require_admin(request) or require_internal(request)):
+        return jsonify({"error": "unauthorized"}), 401
     email = (request.args.get('email') or '').lower().strip()
     product = (request.args.get('product') or '').strip()
     if not email or not product:
@@ -694,8 +756,7 @@ def api_license():
 
 @app.post("/v1/internal/licenses/grant")
 def v1_internal_grant():
-    # Mesmo comportamento do /admin/grant (token ADMIN_TOKEN)
-    if not require_admin(request):
+    if not require_internal(request):
         return jsonify({'error': 'unauthorized'}), 401
     data = request.json or {}
     email = (data.get('email') or '').lower().strip()
@@ -716,7 +777,7 @@ def v1_internal_grant():
 
 @app.get("/v1/internal/licenses/status")
 def v1_internal_license_status():
-    if not require_admin(request):
+    if not require_internal(request):
         return jsonify({"error": "unauthorized"}), 401
 
     license_key = (request.args.get("license_key") or "").strip().upper()
@@ -743,7 +804,7 @@ def v1_internal_license_status():
 
 @app.post("/v1/internal/users/verify")
 def v1_internal_verify_user():
-    if not require_admin(request):
+    if not require_internal(request):
         return jsonify({"error": "unauthorized"}), 401
 
     data = request.json or {}
@@ -751,6 +812,10 @@ def v1_internal_verify_user():
     password = data.get("password", "")
     if not email or not password:
         return jsonify({"error": "missing_fields"}), 400
+    if _rate_limit_exceeded("internal_verify_ip", request.remote_addr, 80):
+        return jsonify({"error": "too_many_requests"}), 429
+    if _rate_limit_exceeded("internal_verify_email", email, 25):
+        return jsonify({"error": "too_many_requests"}), 429
 
     conn = db()
     c = conn.cursor()
@@ -759,7 +824,7 @@ def v1_internal_verify_user():
     conn.close()
 
     valid = bool(row) and _verify_password(password, row[0])
-    return jsonify({"valid": valid, "email": email})
+    return jsonify({"valid": valid})
 
 # ADMIN — conceder acesso
 # =========================
@@ -882,11 +947,13 @@ def generate_license_key(app_name):
 
 @app.post("/internal/create_license")
 def internal_create_license():
-    if request.headers.get("X-Internal-Key") != os.getenv("ADMIN_TOKEN"):
+    if not require_internal(request):
         return {"error": "unauthorized"}, 401
 
-    data = request.json
-    app_name = data.get("app")
+    data = request.json or {}
+    app_name = str(data.get("app", "")).strip()
+    if not app_name:
+        return {"error": "missing_fields"}, 400
 
     key = generate_license_key(app_name)
 
