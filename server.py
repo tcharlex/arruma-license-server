@@ -794,7 +794,7 @@ def generate_license_key(app_name):
 
 @app.post("/internal/create_license")
 def internal_create_license():
-    if request.headers.get("X-Internal-Key") != os.getenv("INTERNAL_API"):
+    if request.headers.get("X-Internal-Key") != os.getenv("ADMIN_TOKEN"):
         return {"error": "unauthorized"}, 401
 
     data = request.json
