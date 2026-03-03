@@ -36,6 +36,7 @@ def licenses():
     c = conn.cursor()
     c.execute("SELECT license_key, app, device_id FROM licenses")
     rows = [{"key": r[0], "app": r[1], "device": r[2]} for r in c.fetchall()]
+    conn.close()
     return jsonify(rows)
 
 

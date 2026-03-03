@@ -39,7 +39,7 @@ app = Flask(__name__)
 from admin import admin_bp
 
 app.register_blueprint(admin_bp)
-TOKEN_DURATION = 60 * 60 * 24 * 90  # 90 dias
+SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL_SECONDS", "3600"))
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN")
 INTERNAL_API_TOKEN = os.environ.get("INTERNAL_API")
 if not ADMIN_TOKEN:
@@ -367,7 +367,7 @@ def v1_login():
         return _error("already_in_use", "Conta ativa em outro dispositivo", 403)
 
     now = int(time.time())
-    access_expires_in = 3600
+    access_expires_in = SESSION_TTL_SECONDS
     access_token = secrets.token_hex(32)
     refresh_token = secrets.token_hex(32)
 
@@ -427,7 +427,7 @@ def login():
     # validar senha
     c.execute("SELECT password FROM users WHERE email=?", (email,))
     row = c.fetchone()
-    if not row or not bcrypt.checkpw(password.encode(), row[0]):
+    if not row or not _verify_password(password, row[0]):
         conn.close()
         return jsonify({"error": "invalid_credentials"}), 401
 
@@ -454,7 +454,7 @@ def login():
 
     # criar sessão
     token = secrets.token_hex(32)
-    expires = int(time.time() + TOKEN_DURATION)
+    expires = int(time.time() + SESSION_TTL_SECONDS)
 
     c.execute(
         "INSERT OR REPLACE INTO sessions (token, email, expires) VALUES (?, ?, ?)",
@@ -495,9 +495,12 @@ def register():
         return jsonify({"error": "email_exists"}), 409
 
     pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-    c.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, pw_hash))
-
-    conn.commit()
+    try:
+        c.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, pw_hash))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"error": "email_exists"}), 409
     conn.close()
 
     return jsonify({"status": "account_created"})
@@ -942,17 +945,25 @@ def internal_create_license():
     if not app_name:
         return {"error": "missing_fields"}, 400
 
-    key = generate_license_key(app_name)
-
     conn = db()
     c = conn.cursor()
-    c.execute(
-        "INSERT INTO licenses (license_key, app, device_id) VALUES (?, ?, NULL)",
-        (key, app_name),
-    )
-    conn.commit()
+    key = None
+    for _ in range(10):
+        candidate = generate_license_key(app_name)
+        try:
+            c.execute(
+                "INSERT INTO licenses (license_key, app, device_id) VALUES (?, ?, NULL)",
+                (candidate, app_name),
+            )
+            conn.commit()
+            key = candidate
+            break
+        except sqlite3.IntegrityError:
+            continue
     conn.close()
 
+    if not key:
+        return {"error": "could_not_create_license"}, 500
     return {"license_key": key}
 
 
